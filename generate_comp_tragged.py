@@ -8,10 +8,36 @@ import numpy as np
 import os
 import json
 from main import load_model, metric_fn
+import shutil
+import csv
+
+def create_labeled_csv(predicts,original_file, dest_file):
+    # shutil.copyfile(original_file, dest_file)
+
+    with open(original_file, 'r') as csvinput:
+        with open(dest_file, 'w') as csvoutput:
+            writer = csv.writer(csvoutput, lineterminator='\n')
+            reader = csv.reader(csvinput)
+
+            all = []
+            # row = next(reader)
+            # row.append('Berry')
+            # all.append(row)
+
+            for i,row in enumerate(reader):
+                if i!=0:
+                    row.append(True if predicts[i-1] else False)
+                all.append(row)
+
+            writer.writerows(all)
+            assert len(predicts)+1  == len(all), f' len(predicts)={len(predicts)} len(all)={len(all)} expected to have a prediction to every example in input file'
+
+    print('done')
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./HW2 - wet/clean_data/baby')
+    parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./HW2 - wet/clean_data/office_products')
     parser.add_argument("--result_filename", help="Name of the results file", type=str, default='comp_313627358.csv')
     parser.add_argument("--out_dir", help="dir for predict results", type=str, default='./predict')
     parser.add_argument("--model_dir", help="dir of trained model", type=str, default='./best_model')
@@ -22,15 +48,17 @@ def main():
     if 'baby' in args.data_dir:
         domain = 'baby'
         data_files = {
-            'train': str(DATA_PATH / 'train.csv'),
-            'test': str(DATA_PATH / 'dev.csv')
+            'unlabeled': str(DATA_PATH / 'unlabeled.csv')
         }
+        data_names = ['unlabeled']
+
     if 'office' in args.data_dir:
         domain = 'office'
         data_files = {
-            'dev': str(DATA_PATH / 'dev.csv'),
-            'test': str(DATA_PATH / 'test.csv')
+            'test': str(DATA_PATH / 'test.csv'),
+            'unlabeled': str(DATA_PATH / 'unlabeled.csv')
         }
+        data_names = ['test','unlabeled']
 
     raw_datasets = load_dataset("csv", data_files=data_files)
 
@@ -45,9 +73,6 @@ def main():
 
     tokenized_datasets.set_format('torch')
 
-    for split in tokenized_datasets:
-        tokenized_datasets[split] = tokenized_datasets[split].add_column('label', raw_datasets[split]['label'])
-
     # eval_trainer
     eval_args = TrainingArguments(output_dir=args.out_dir,
                                   per_device_train_batch_size=config['batch_size'],
@@ -56,7 +81,7 @@ def main():
                                   metric_for_best_model='f1',
                                   greater_is_better=True, evaluation_strategy='epoch', do_train=False,
                                   do_eval=True,
-                                  num_train_epochs=args.epochs, report_to='none',
+                                  num_train_epochs=config['epochs'], report_to='none',
                                   )
 
 
@@ -64,23 +89,18 @@ def main():
 
     eval_trainer = Trainer(model=eval_model,
                            args=eval_args,
-                           train_dataset=tokenized_datasets['train'] if domain == 'baby' else None,
-                           eval_dataset=tokenized_datasets['test'] if domain == 'baby' else tokenized_datasets['dev'],
                            compute_metrics=metric_fn
                            )
 
-    eval_res = eval_trainer.evaluate()
-    print("best model eval results: ", eval_res)
 
-    predict_res = eval_trainer.predict(tokenized_datasets['test'])
-    print("best model predict results: ", predict_res)
 
-    if domain == 'baby':
-        predict_res = eval_trainer.predict(tokenized_datasets['train'])
-    if domain == 'office':
-        predict_res = eval_trainer.predict(tokenized_datasets['dev'])
+
+    predict_res = eval_trainer.predict(tokenized_datasets[data_names[0]])
     print(f'domain = {domain}')
-    print("best model predict results: ", predict_res)
+    preds = np.argmax(predict_res.predictions, axis=1)
+    print("best model predict results: ", preds)
+
+    create_labeled_csv(preds,data_files[data_names[0]],args.result_filename)
 
 if __name__ == '__main__':
     main()
