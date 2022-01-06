@@ -8,10 +8,12 @@ import torch
 import argparse
 import matplotlib.pyplot as plt
 import random
+from pathlib import Path
+
 import numpy as np
 import os
 import json
-
+import wandb
 def metric_fn(predictions):
     preds = predictions.predictions.argmax(axis=1)
     labels = predictions.label_ids
@@ -89,6 +91,7 @@ if __name__ == '__main__':
     parser.add_argument("--max_length", type=int, default=350)
     parser.add_argument("--out_dir", help="dir to save trained model", type=str, default='./trained_mlp')
     args = parser.parse_args()
+    wandb.init(project="NLP-WET2", entity="noambenmoshe")
 
     set_seed(args.seed)
 
@@ -124,7 +127,8 @@ if __name__ == '__main__':
                              load_best_model_at_end=True,
                              metric_for_best_model='f1',
                              greater_is_better=True, evaluation_strategy='epoch', do_train=True,
-                             num_train_epochs=args.epochs, report_to='none',
+                             num_train_epochs=args.epochs,
+                                      report_to='wandb',
                              )
 
     trainer = Trainer(
@@ -137,6 +141,7 @@ if __name__ == '__main__':
 
     trainer.train()
 
+    wandb.finish()
     # save best model
     save_model(model_seq_classification, vars(args), os.path.join(args.out_dir, 'best_model/'))
 
@@ -164,4 +169,3 @@ if __name__ == '__main__':
 
     eval_res = eval_trainer.evaluate()
     print("best model eval results: ", eval_res)
-
