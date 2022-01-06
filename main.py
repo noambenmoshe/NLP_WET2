@@ -9,6 +9,8 @@ import argparse
 import matplotlib.pyplot as plt
 import random
 import numpy as np
+import os
+import json
 
 def metric_fn(predictions):
     preds = predictions.predictions.argmax(axis=1)
@@ -39,6 +41,30 @@ def data_stats(raw_dataset, tokenizer):
     # plt.show()
     return
 
+def load_model(dir):
+    with open(os.path.join(dir,'config.json'), "r") as fp:
+        config = json.load(fp)
+
+    model = AutoModelForSequenceClassification.from_pretrained(config['model_name'],
+                                                                                  num_labels=config['num_labels'])
+    model.load_state_dict(torch.load(os.path.join(dir, 'model.pt')))
+    return model, config
+
+
+def save_model(model, config, dir):
+    '''
+    saves model state_dict and config dictionary for reloading
+    :param model: model to save
+    :param config: moedl configuration params
+    :param dir: where to save the model
+    :return: None
+    '''
+    Path(dir).mkdir(parents=True, exist_ok=True)
+    torch.save(model.to('cpu').state_dict(), os.path.join(dir, 'model.pt'))
+    with open(os.path.join(dir,'config.json'), 'w') as fp:
+        json.dump(config, fp, indent=4)
+
+
 
 def set_seed(seed=42):
     random.seed(seed)
@@ -54,6 +80,8 @@ if __name__ == '__main__':
     parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./HW2 - wet/clean_data/baby')
 
     parser.add_argument("--model_name", type=str, default='bert-base-uncased')
+    parser.add_argument("--num_labels", type=int, default=2)
+
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--grad_accum", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=5)
@@ -64,7 +92,8 @@ if __name__ == '__main__':
 
     set_seed(args.seed)
 
-    model_seq_classification = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=2)
+    model_seq_classification = AutoModelForSequenceClassification.from_pretrained(args.model_name,
+                                                                                  num_labels=args.num_labels)
 
     DATA_PATH = Path(args.data_dir)
     data_files = {
@@ -87,7 +116,7 @@ if __name__ == '__main__':
 
     OUT_PATH = Path(args.out_dir)
 
-    args = TrainingArguments(output_dir=OUT_PATH, overwrite_output_dir=True, per_device_train_batch_size=args.batch_size,
+    training_args = TrainingArguments(output_dir=OUT_PATH, overwrite_output_dir=True, per_device_train_batch_size=args.batch_size,
                              per_device_eval_batch_size=args.batch_size,
                              gradient_accumulation_steps=args.grad_accum,
                              save_strategy='epoch',
@@ -100,11 +129,39 @@ if __name__ == '__main__':
 
     trainer = Trainer(
         model=model_seq_classification,
-        args=args,
+        args=training_args,
         train_dataset=tokenized_datasets['train'],
         eval_dataset=tokenized_datasets['test'],
         compute_metrics=metric_fn
     )
 
     trainer.train()
+
+    # save best model
+    save_model(model_seq_classification, vars(args), os.path.join(args.out_dir, 'best_model/'))
+
+    print("====================================================")
+    print("load and evaluate best model")
+    eval_model, _ = load_model(os.path.join(args.out_dir, 'best_model/'))
+    # eval_trainer
+    eval_args = TrainingArguments(output_dir=OUT_PATH,
+                                  per_device_train_batch_size=args.batch_size,
+                                  per_device_eval_batch_size=args.batch_size,
+                                  gradient_accumulation_steps=args.grad_accum,
+                                  metric_for_best_model='f1',
+                                  greater_is_better=True, evaluation_strategy='epoch', do_train=False,
+                                  do_eval=True,
+                                  num_train_epochs=args.epochs, report_to='none',
+                                  )
+
+    OUT_PATH = Path(os.path.join(args.out_dir, 'best_moedl_eval/'))
+    eval_trainer = Trainer(model=eval_model,
+                            args=eval_args,
+                            train_dataset=tokenized_datasets['train'],
+                            eval_dataset=tokenized_datasets['test'],
+                            compute_metrics=metric_fn
+                        )
+
+    eval_res = eval_trainer.evaluate()
+    print("best model eval results: ", eval_res)
 
