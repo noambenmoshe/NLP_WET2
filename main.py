@@ -1,6 +1,5 @@
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from datasets import load_dataset, load_metric
-from pathlib import Path
 from sklearn.metrics import f1_score
 from transformers import TrainingArguments
 from transformers import Trainer
@@ -96,12 +95,11 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-
-if __name__ == '__main__':
+def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./HW2 - wet/clean_data')
 
-    parser.add_argument("--model_name", type=str, default='bert-base-uncased')
+    parser.add_argument("--model_name", type=str, default='bert-large-uncased')
     parser.add_argument("--num_labels", type=int, default=2)
 
     parser.add_argument("--batch_size", type=int, default=1)
@@ -109,8 +107,11 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max_length", type=int, default=400)
-    parser.add_argument("--out_dir", help="dir to save trained model", type=str, default='./trained_bert_base')
+    parser.add_argument("--out_dir", help="dir to save trained model", type=str, default='./trained_bert_large')
     args = parser.parse_args()
+    return args
+
+def main(args):
 
     if wandb:
         wandb.init(project="NLP-WET2", config=args)
@@ -133,7 +134,7 @@ if __name__ == '__main__':
     # data stats
     plots_dir = os.path.join(args.out_dir, 'plots/')
     Path(plots_dir).mkdir(parents=True, exist_ok=True)
-    data_stats(raw_datasets, tokenizer, out_dir=plots_dir)
+    # data_stats(raw_datasets, tokenizer, out_dir=plots_dir)
 
     tokenized_datasets = raw_datasets.map(tokenizer, input_columns='review', fn_kwargs={"max_length": args.max_length,
                                                                                         "truncation": True,
@@ -162,11 +163,12 @@ if __name__ == '__main__':
                                                                                        office_raw_datasets[split][
                                                                                            'label'])
 
-    training_args = TrainingArguments(output_dir=OUT_PATH, overwrite_output_dir=True, per_device_train_batch_size=args.batch_size,
+    training_args = TrainingArguments(output_dir=OUT_PATH, overwrite_output_dir=True,
+                                      per_device_train_batch_size=args.batch_size,
                              per_device_eval_batch_size=args.batch_size,
                              gradient_accumulation_steps=args.grad_accum,
                              save_strategy='epoch',
-                             save_total_limit=1,  # Only last 5 models are saved. Older ones are deleted.
+                            save_total_limit=1,
                              load_best_model_at_end=True,
                              metric_for_best_model='acc',
                              greater_is_better=True, evaluation_strategy='epoch', do_train=True,
@@ -174,22 +176,22 @@ if __name__ == '__main__':
                              report_to='wandb' if wandb else None,
                              )
 
-    # trainer = Trainer(
-    #     model=model_seq_classification,
-    #     args=training_args,
-    #     train_dataset=tokenized_datasets['train'],
-    #     eval_dataset=tokenized_datasets['test'],
-    #     compute_metrics=metric_fn
-    # )
-
-    # try train on baby , evaluate on office
     trainer = Trainer(
-            model=model_seq_classification,
-            args=training_args,
-            train_dataset=tokenized_datasets['train'],
-            eval_dataset=office_tokenized_datasets['dev'],
-            compute_metrics=metric_fn
-        )
+        model=model_seq_classification,
+        args=training_args,
+        train_dataset=tokenized_datasets['train'],
+        eval_dataset=tokenized_datasets['test'],
+        compute_metrics=metric_fn
+    )
+
+    # # try train on baby , evaluate on office
+    # trainer = Trainer(
+    #         model=model_seq_classification,
+    #         args=training_args,
+    #         train_dataset=tokenized_datasets['train'],
+    #         eval_dataset=office_tokenized_datasets['dev'],
+    #         compute_metrics=metric_fn
+    #     )
 
     trainer.train()
     if wandb:
@@ -233,3 +235,9 @@ if __name__ == '__main__':
 
     eval_res = office_eval_trainer.evaluate()
     print("best model eval results: ", eval_res)
+
+    return model_seq_classification
+
+if __name__ == '__main__':
+    args = get_args()
+    main(args)
