@@ -40,8 +40,8 @@ def get_args():
     parser.add_argument("--model_name", type=str, default='bert-large-uncased')
     parser.add_argument("--num_labels", type=int, default=2)
 
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--grad_accum", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--grad_accum", type=int, default=16)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max_length", type=int, default=400)
