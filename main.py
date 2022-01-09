@@ -27,6 +27,7 @@ def metric_fn(predictions):
 
 
 def data_stats(raw_dataset, tokenizer, out_dir):
+    # generate dataset statistics
     train_len = []
     val_len = []
 
@@ -36,12 +37,6 @@ def data_stats(raw_dataset, tokenizer, out_dir):
 
     for i in tokenized_data['test']:
         val_len.append(len(i['input_ids']))
-
-
-    # plt.hist(train_len + val_len,bins=1000, cumulative=True, label='CDF',
-    #          histtype='step', alpha=0.8, color='k')
-    # plt.title('reviews lengths CDF')
-    # plt.savefig(os.path.join(out_dir, 'review_length.png'))
 
     plt.figure()
     plt.hist(train_len,bins=1000, cumulative=True, label='CDF',
@@ -86,7 +81,6 @@ def save_model(model, config, dir):
         json.dump(config, fp, indent=4)
 
 
-
 def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
@@ -102,8 +96,8 @@ def get_args():
     parser.add_argument("--model_name", type=str, default='bert-large-uncased')
     parser.add_argument("--num_labels", type=int, default=2)
 
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--grad_accum", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--grad_accum", type=int, default=1)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max_length", type=int, default=400)
@@ -118,9 +112,10 @@ def main(args):
 
     set_seed(args.seed)
 
+    # load preterained model
     model_seq_classification = AutoModelForSequenceClassification.from_pretrained(args.model_name,
                                                                                   num_labels=args.num_labels)
-
+    # load train & eval datasets
     DATA_PATH = Path(args.data_dir)
     data_files = {
         'train': str(DATA_PATH / 'baby/train.csv'),
@@ -132,8 +127,8 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     # data stats
-    plots_dir = os.path.join(args.out_dir, 'plots/')
-    Path(plots_dir).mkdir(parents=True, exist_ok=True)
+    # plots_dir = os.path.join(args.out_dir, 'plots/')
+    # Path(plots_dir).mkdir(parents=True, exist_ok=True)
     # data_stats(raw_datasets, tokenizer, out_dir=plots_dir)
 
     tokenized_datasets = raw_datasets.map(tokenizer, input_columns='review', fn_kwargs={"max_length": args.max_length,
@@ -162,7 +157,7 @@ def main(args):
         office_tokenized_datasets[split] = office_tokenized_datasets[split].add_column('label',
                                                                                        office_raw_datasets[split][
                                                                                            'label'])
-
+    # crate trainer
     training_args = TrainingArguments(output_dir=OUT_PATH, overwrite_output_dir=True,
                                       per_device_train_batch_size=args.batch_size,
                              per_device_eval_batch_size=args.batch_size,
@@ -184,21 +179,15 @@ def main(args):
         compute_metrics=metric_fn
     )
 
-    # # try train on baby , evaluate on office
-    # trainer = Trainer(
-    #         model=model_seq_classification,
-    #         args=training_args,
-    #         train_dataset=tokenized_datasets['train'],
-    #         eval_dataset=office_tokenized_datasets['dev'],
-    #         compute_metrics=metric_fn
-    #     )
-
+    # train
     trainer.train()
     if wandb:
         wandb.finish()
+
     # save best model
     save_model(model_seq_classification, vars(args), os.path.join(args.out_dir, 'best_model/'))
 
+    # evaluate on dev sets
     print("====================================================")
     print("load and evaluate best model - baby")
     eval_model, _ = load_model(os.path.join(args.out_dir, 'best_model/'))
@@ -222,7 +211,7 @@ def main(args):
                         )
 
     eval_res = eval_trainer.evaluate()
-    print("best model eval results: ", eval_res)
+    print("best model baby.dev results: ", eval_res)
 
     print("====================================================")
     print("evaluate on office products")
@@ -234,7 +223,8 @@ def main(args):
                            )
 
     eval_res = office_eval_trainer.evaluate()
-    print("best model eval results: ", eval_res)
+    print("best model office.dev results: ", eval_res)
+
 
     return model_seq_classification
 

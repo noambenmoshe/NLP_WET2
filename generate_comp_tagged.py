@@ -10,18 +10,12 @@ from main import main as train_model
 import csv
 
 def create_labeled_csv(predicts,original_file, dest_file):
-    # shutil.copyfile(original_file, dest_file)
-
     with open(original_file, 'r') as csvinput:
         with open(dest_file, 'w') as csvoutput:
             writer = csv.writer(csvoutput, lineterminator='\n')
             reader = csv.reader(csvinput)
 
             all = []
-            # row = next(reader)
-            # row.append('Berry')
-            # all.append(row)
-
             for i,row in enumerate(reader):
                 if i!=0:
                     row.append(True if predicts[i-1] else False)
@@ -59,6 +53,7 @@ def get_args():
 def main():
     args = get_args()
 
+    # load raw datasets
     DATA_PATH = Path(args.data_dir)
     print("organize data")
     if args.eval_domain == 'baby':
@@ -78,7 +73,7 @@ def main():
 
     raw_datasets = load_dataset("csv", data_files=data_files)
 
-
+    # get trained model to test
     if args.model_dir is not None:
         print("load fine tuned model")
         eval_model, config = load_model(args.model_dir)
@@ -88,12 +83,11 @@ def main():
         eval_model = train_model(args)
         config = vars(args)
 
+    # tokenize test dataset
     tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
-
     tokenized_datasets = raw_datasets.map(tokenizer, input_columns='review', fn_kwargs={"max_length": config['max_length'],
                                                                                         "truncation": True,
                                                                                         "padding": "max_length"})
-
     tokenized_datasets.set_format('torch')
 
     # eval_trainer
@@ -106,18 +100,12 @@ def main():
                                   do_eval=True,
                                   num_train_epochs=config['epochs'], report_to='none',
                                   )
-
-
-
-
     eval_trainer = Trainer(model=eval_model,
                            args=eval_args,
                            compute_metrics=metric_fn
                            )
 
-
-
-
+    # generate test results
     predict_res = eval_trainer.predict(tokenized_datasets[data_names[0]])
     print(f'domain = {domain}')
     preds = np.argmax(predict_res.predictions, axis=1)
