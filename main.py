@@ -91,7 +91,7 @@ def set_seed(seed=42):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./HW2 - wet/clean_data')
+    parser.add_argument("--data_dir", help="Raw text dir", type=str, default='./clean_data')
 
     parser.add_argument("--model_name", type=str, default='bert-large-uncased')
     parser.add_argument("--num_labels", type=int, default=2)
